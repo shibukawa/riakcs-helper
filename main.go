@@ -18,6 +18,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 )
 
 var b64 = base64.StdEncoding
@@ -25,7 +26,7 @@ var b64 = base64.StdEncoding
 const usageStr = `Usage:
 
 Config:
-	riakcs-helper init [url] [adminAccessKey] [adminSecretKey]
+	riakcs-helper init [url] [adminAccessKey] [adminSecretKey] [*proxy*]
 
 User Operations:
 	riakcs-helper create-user [userName] [email]
@@ -39,13 +40,13 @@ Bucket Operations:
 	riakcs-helper create-bucket [bucketName] [*accesibleUserName*]
 		: Create bucket. If user name is passed,
 		: give read/write access to specified user (owner is admin)
-	riakcs-helper add-access [bucketName] [accesibleUserName]
-		: Create bucket. If user name is passed,
+	riakcs-helper set-acl [bucketName] [accesibleUserName]
 		: give read/write access to specified user (owner is admin)
 
 User and Bucket Operations:
 	riakcs-helper create-project [bucketAndUserName] [email]
-	    : Create user and bucket (both have same name)
+		: Create user and bucket (both have same name)
+		: New user has READ/WRITE access of the new bucket.
 `
 
 func usage() {
@@ -67,6 +68,7 @@ type Config struct {
 	AdminAccessKey string
 	AdminSecretKey string
 	Host string
+	Proxy string
 }
 
 func readConfig() *Config {
@@ -92,10 +94,10 @@ func readConfig() *Config {
 	return &config
 }
 
-func writeConfig(host, adminAccessKey, adminSecretKey string) {
+func writeConfig(host, adminAccessKey, adminSecretKey, proxy string) {
 	usr, _ := user.Current()
 	path := filepath.Join(usr.HomeDir, ".riakcs_helper")
-	config := Config{adminAccessKey, adminSecretKey, host}
+	config := Config{adminAccessKey, adminSecretKey, host, proxy}
 	b, _ := json.Marshal(config)
 	out, err := os.Create(path)
 	if err != nil {
@@ -107,7 +109,25 @@ func writeConfig(host, adminAccessKey, adminSecretKey string) {
 	out.Close()
 }
 
-func sign(req *http.Request, config *Config, md5, contentType string) {
+func createClient(config *Config) *http.Client {
+	client := &http.Client{}
+	if config.Proxy != "" {
+		urlObj := url.URL{}
+		urlProxy, err := urlObj.Parse(config.Proxy)
+		if err != nil {
+			log.Fatal(err)
+			return client
+		}
+		transport := &http.Transport{}
+		transport.Proxy = http.ProxyURL(urlProxy)
+		// setting for ssl
+		// transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		client.Transport = transport
+	}
+	return client
+}
+
+func sign(req *http.Request, config *Config, md5, contentType, signUrl string) {
 	t := time.Now()
 	adminAccessKey := config.AdminAccessKey
 	adminSecretKey := config.AdminSecretKey
@@ -119,7 +139,8 @@ func sign(req *http.Request, config *Config, md5, contentType string) {
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	str_to_sign := fmt.Sprintf("%s\n%s\n%s\n%s\n%s", req.Method, md5, contentType, dateStr, req.URL.Path)
+	str_to_sign := fmt.Sprintf("%s\n%s\n%s\n%s\n%s", req.Method, md5, contentType, dateStr, signUrl)
+	//log.Println(str_to_sign)
 	hash := hmac.New(sha1.New, []byte(adminSecretKey))
 	hash.Write([]byte(str_to_sign))
 
@@ -134,12 +155,12 @@ func createUser(name, email string) *RiakUser {
 		fmt.Println("Can't read config file. Call init command first.")
 	}
 	host := config.Host
-	url := fmt.Sprintf("%s/riak-cs/user", host)
+	url := fmt.Sprintf("http://%s/riak-cs/user", host)
 	requestBody := fmt.Sprintf("{\"email\":\"%s\",\"name\":\"%s\"}", email, name)
-	client := &http.Client{}
+	client := createClient(config)
 	req, _ := http.NewRequest("POST", url, strings.NewReader(requestBody))
 
-	sign(req, config, "", "application/json")
+	sign(req, config, "", "application/json", "/riak-cs/user")
 
 	req.Header.Set("Accept", "application/json")
 
@@ -197,13 +218,12 @@ func getAllUsers() []*RiakUser {
 	if config == nil {
 		fmt.Println("Can't read config file. Call init command first.")
 	}
-	url := fmt.Sprintf("%s/riak-cs/users",  config.Host)
-	client := &http.Client{}
+	url := fmt.Sprintf("http://%s/riak-cs/users",  config.Host)
+	client := createClient(config)
 	req, _ := http.NewRequest("GET", url, nil)
-
-	sign(req, config, "", "application/json")
-
 	req.Header.Set("Accept", "application/json")
+
+	sign(req, config, "", "application/json", "/riak-cs/users")
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -271,12 +291,12 @@ func modifyUserSetting(userName, requestBody string) *RiakUser {
 		return nil
 	}
 
-	url := fmt.Sprintf("%s/riak-cs/user/%s", config.Host, foundUser.Key_id)
+	url := fmt.Sprintf("http://%s/riak-cs/user/%s", config.Host, foundUser.Key_id)
 
-	client := &http.Client{}
+	client := createClient(config)
 	req, _ := http.NewRequest("PUT", url, strings.NewReader(requestBody))
 
-	sign(req, config, "", "application/json")
+	sign(req, config, "", "application/json", fmt.Sprintf("/riak-cs/user/%s", foundUser.Key_id))
 
 	req.Header.Set("Accept", "application/json")
 
@@ -286,6 +306,7 @@ func modifyUserSetting(userName, requestBody string) *RiakUser {
 		return nil
 	}
 	body, err := ioutil.ReadAll(res.Body)
+	//log.Print(string(body))
 	if err != nil {
 		log.Fatal(err)
 		return nil
@@ -324,36 +345,31 @@ func dumpUser(user *RiakUser) {
 	fmt.Printf("  status:       %s\n", user.Status)
 }
 
-func createBucket(bucket string) {
+func createBucket(bucket string) bool {
 	config := readConfig()
 	if config == nil {
 		fmt.Println("Can't read config file. Call init command first.")
+		return false
 	}
 
-	client := &http.Client{}
-	req, _ := http.NewRequest("PUT", fmt.Sprintf("%s/%s", config.Host, bucket), strings.NewReader(""))
+	client := createClient(config)
+	req, _ := http.NewRequest("PUT", fmt.Sprintf("http://%s.%s", bucket, config.Host), strings.NewReader(""))
+	req.Header.Set("Host", fmt.Sprintf("http://%s.%s", bucket, config.Host))
 
-	sign(req, config, "", "")
-
-	req.Header.Set("Host", fmt.Sprintf("%s.s3.amazonaws.com", bucket))
+	sign(req, config, "", "", fmt.Sprintf("/%s/", bucket))
 
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return
+		return false
 	}
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		log.Fatal(err)
-		return
+	if res.StatusCode != 200 {
+		fmt.Println(res.Status)
+		return false
+	} else {
+		fmt.Printf("Create bucket '%s' successuflly\n", bucket)
 	}
-	log.Print(res.Status)
-	log.Print(string(body))
-
-	if res.StatusCode != 201 {
-		log.Fatalln("Bucket creation failed.")
-	}
+	return true
 }
 
 func getAccessRight(bucket string) {
@@ -362,12 +378,11 @@ func getAccessRight(bucket string) {
 		fmt.Println("Can't read config file. Call init command first.")
 	}
 
-	client := &http.Client{}
-	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/%s?acl", config.Host, bucket), strings.NewReader(""))
+	client := createClient(config)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("http://%s.%s/?acl", bucket, config.Host), strings.NewReader(""))
+	req.Header.Set("Host", fmt.Sprintf("http://%s.%s", bucket, config.Host))
 
-	sign(req, config, "", "")
-
-	req.Header.Set("Host", fmt.Sprintf("%s.s3.amazonaws.com", bucket))
+	sign(req, config, "", "", fmt.Sprintf("/%s/?acl", bucket))
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -384,10 +399,18 @@ func getAccessRight(bucket string) {
 	log.Print(string(body))
 }
 
+func makeGrantTag(user *RiakUser, permission string) string {
+	return fmt.Sprintf(`<Grant>
+				<Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">
+				<ID>%s</ID>
+				<DisplayName>%s</DisplayName>
+				</Grantee>
+				<Permission>%s</Permission>
+			</Grant>`, user.Id, user.Display_name, permission)
+}
 
 func addAccessRight(bucket, userName string) {
-	log.Print(bucket, userName)
-	/*admin, foundUser := findAdminAndUser(userName)
+	admin, foundUser := findAdminAndUser(userName)
 	if foundUser == nil {
 		fmt.Printf("User %s is not found\n", userName)
 		return
@@ -398,57 +421,49 @@ func addAccessRight(bucket, userName string) {
 		fmt.Println("Can't read config file. Call init command first.")
 	}
 
-	client := &http.Client{}
-	req, _ := http.NewRequest("PUT", fmt.Sprintf("%s/%s?acl", config.Host, bucket), strings.NewReader())
+	adminXML := fmt.Sprintf(`<Owner>
+			<ID>%s</ID>
+			<DisplayName>%s</DisplayName>
+		</Owner>`, admin.Id, admin.Display_name)
+	adminPermission := makeGrantTag(admin, "FULL_CONTROL")
+	userReadPermission := makeGrantTag(foundUser, "READ")
+	userWritePermission := makeGrantTag(foundUser, "WRITE")
 
-	sign(req, config, "", "")
+	requestBody := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+	<AccessControlPolicy>
+		%s
+		<AccessControlList>
+			%s
+			%s
+			%s
+		</AccessControlList>
+	</AccessControlPolicy>`, adminXML, adminPermission, userReadPermission, userWritePermission)
+	client := createClient(config)
 
-	req.Header.Set("Host", fmt.Sprintf("%s.s3.amazonaws.com", bucket))
+	req, _ := http.NewRequest("PUT", fmt.Sprintf("http://%s.%s/?acl", bucket, config.Host), strings.NewReader(requestBody))
+	req.Header.Set("Host", fmt.Sprintf("http://%s.%s", bucket, config.Host))
 
-	res, err := client.Do(req)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-	log.Print(res.Status)
-	log.Print(string(body))
-
-	if res.StatusCode != 201 {
-		log.Fatalln("Bucket creation failed.")
-	}*/
-}
-
-func createProject(email, bucket string) {
-	config := readConfig()
-	if config == nil {
-		fmt.Println("Can't read config file. Call init command first.")
-	}
-	user := createUser(email, bucket)
-	if user == nil {
-		log.Fatalln("User creation error")
-	}
-	url := fmt.Sprintf("%s/buckets/%s", config.Host, bucket)
-	client := &http.Client{}
-	req, _ := http.NewRequest("PUT", url, strings.NewReader(""))
-
-	sign(req, config, "", "application/json")
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("x-amz-acl", "bucket-owner-full-control")
+	sign(req, config, "", "", fmt.Sprintf("/%s/?acl", bucket))
 
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
-	if res.StatusCode != 201 {
-		log.Fatalln("Bucket creation failed.")
+
+	_, err = ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+	if res.StatusCode != 200 {
+		log.Fatalln("Set bucket %s's ACL failed.", bucket)
+	} else {
+		fmt.Printf(`Set bucket %s's ACL successfully.
+	owner: %s (FULL_CONTROL)
+	user : %s (READ/WRITE)
+`, bucket, admin.Display_name, foundUser.Display_name)
 	}
 }
 
@@ -460,10 +475,13 @@ func main() {
 		os.Exit(1)
 	}
 	if os.Args[1] == "init" && len(os.Args) == 5 {
-		writeConfig(os.Args[2], os.Args[3], os.Args[4])
+		writeConfig(os.Args[2], os.Args[3], os.Args[4], "")
+	} else if os.Args[1] == "init" && len(os.Args) == 6 {
+		writeConfig(os.Args[2], os.Args[3], os.Args[4], os.Args[5])
 	} else if os.Args[1] == "create-user" && len(os.Args) == 4 {
 		user := createUser(os.Args[2], os.Args[3])
 		if user != nil {
+			fmt.Println("Create user successuflly")
 			dumpUser(user)
 		}
 	} else if os.Args[1] == "show-user" && len(os.Args) == 2 {
@@ -501,12 +519,24 @@ func main() {
 			dumpUser(user)
 		}
 	} else if os.Args[1] == "create-project" && len(os.Args) == 4 {
-		createProject(os.Args[2], os.Args[3])
+		if (createBucket(os.Args[2])) {
+			user := createUser(os.Args[2], os.Args[3])
+			if user != nil {
+				fmt.Println("Create user successuflly")
+				dumpUser(user)
+				addAccessRight(os.Args[2], os.Args[2])
+			}
+		}
 	} else if os.Args[1] == "create-bucket" && len(os.Args) == 3 {
 		createBucket(os.Args[2])
-	} else if os.Args[1] == "add-access" && len(os.Args) == 4 {
+	} else if os.Args[1] == "create-bucket" && len(os.Args) == 4 {
+		if (createBucket(os.Args[2])) {
+			addAccessRight(os.Args[2], os.Args[3])
+		}
+	} else if os.Args[1] == "set-acl" && len(os.Args) == 4 {
 		addAccessRight(os.Args[2], os.Args[3])
-	} else if os.Args[1] == "get-access" && len(os.Args) == 3 {
+	} else if os.Args[1] == "get-acl" && len(os.Args) == 3 {
+		// debug command it just dump raw XML
 		getAccessRight(os.Args[2])
 	} else {
 		usage()
