@@ -28,8 +28,8 @@
       <file leaf-file-name="main.go" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/main.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state vertical-scroll-proportion="0.43217665" vertical-offset="7616" max-vertical-offset="8265">
-              <caret line="526" column="52" selection-start-line="526" selection-start-column="52" selection-end-line="526" selection-end-column="52" />
+            <state vertical-scroll-proportion="-6.884858" vertical-offset="4830" max-vertical-offset="8505">
+              <caret line="31" column="9" selection-start-line="31" selection-start-column="9" selection-end-line="31" selection-end-column="9" />
               <folding />
             </state>
           </provider>
@@ -412,8 +412,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/main.go">
       <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.43217665" vertical-offset="7616" max-vertical-offset="8265">
-          <caret line="526" column="52" selection-start-line="526" selection-start-column="52" selection-end-line="526" selection-end-column="52" />
+        <state vertical-scroll-proportion="-6.884858" vertical-offset="4830" max-vertical-offset="8505">
+          <caret line="31" column="9" selection-start-line="31" selection-start-column="9" selection-end-line="31" selection-end-column="9" />
           <folding />
         </state>
       </provider>
