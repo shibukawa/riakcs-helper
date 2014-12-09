@@ -30,6 +30,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"path/filepath"
 	"mime"
 	"mime/multipart"
@@ -56,6 +57,8 @@ Bucket Operations:
 	riakcs-helper create-bucket [bucketName] [*accesibleUserName*]
 		: Create bucket. If user name is passed,
 		: give read/write access to specified user (owner is admin)
+	riakcs-helper delete-bucket [bucketName]
+	riakcs-helper list [*bucketName*]
 	riakcs-helper set-acl [bucketName] [accesibleUserName]
 		: give read/write access to specified user (owner is admin)
 
@@ -361,15 +364,63 @@ func dumpUser(user *RiakUser) {
 	fmt.Printf("  status:       %s\n", user.Status)
 }
 
-func createBucket(bucket string) bool {
+type BucketQueryResult struct {
+	Buckets BucketsResult `xml:"Buckets"`
+}
+
+type BucketsResult struct {
+	Bucket []BucketResult `xml:"Bucket"`
+}
+
+type BucketResult struct {
+	Name string
+	CreationDate string
+}
+
+func listBuckets() {
 	config := readConfig()
 	if config == nil {
 		fmt.Println("Can't read config file. Call init command first.")
-		return false
+		return
 	}
 
 	client := createClient(config)
-	req, _ := http.NewRequest("PUT", fmt.Sprintf("http://%s.%s", bucket, config.Host), strings.NewReader(""))
+	req, _ := http.NewRequest("GET", fmt.Sprintf("http://%s", config.Host), strings.NewReader(""))
+	req.Header.Set("Host", fmt.Sprintf("http://%s", config.Host))
+
+	sign(req, config, "", "", "/")
+
+	res, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	if res.StatusCode != 200 {
+		fmt.Println(res.Status)
+		return
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	fmt.Println("bucket list")
+	var query BucketQueryResult
+	xml.Unmarshal(body, &query)
+	for _, bucket := range query.Buckets.Bucket {
+		fmt.Printf("  %s : created at %s\n", bucket.Name, bucket.CreationDate)
+	}
+}
+
+func accessBucket(bucket, method string, expectReturnCode int) (bool, string) {
+	config := readConfig()
+	if config == nil {
+		fmt.Println("Can't read config file. Call init command first.")
+		return false, ""
+	}
+
+	client := createClient(config)
+	req, _ := http.NewRequest(method, fmt.Sprintf("http://%s.%s", bucket, config.Host), strings.NewReader(""))
 	req.Header.Set("Host", fmt.Sprintf("http://%s.%s", bucket, config.Host))
 
 	sign(req, config, "", "", fmt.Sprintf("/%s/", bucket))
@@ -377,15 +428,61 @@ func createBucket(bucket string) bool {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return false
+		return false, ""
 	}
-	if res.StatusCode != 200 {
+	if res.StatusCode != expectReturnCode {
 		fmt.Println(res.Status)
-		return false
-	} else {
-		fmt.Printf("Create bucket '%s' successuflly\n", bucket)
+		return false, ""
 	}
-	return true
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Fatal(err)
+		return false, ""
+	}
+	return true, string(body)
+}
+
+func deleteBucket(bucket string) bool {
+	ok, _ := accessBucket(bucket, "DELETE", 204)
+	if ok {
+		fmt.Printf("Delete bucket '%s' successuflly\n", bucket)
+		return true
+	}
+	return false
+}
+
+func createBucket(bucket string) bool {
+	ok, _ := accessBucket(bucket, "PUT", 200)
+	if ok {
+		fmt.Printf("Create bucket '%s' successuflly\n", bucket)
+		return true
+	}
+	return false
+}
+
+type BucketContentQueryResult struct {
+	Contents []ContentQueryResult `xml:"Contents"`
+}
+
+type ContentQueryResult struct {
+	Key string
+	LastModified string
+	ETag string
+	Size int
+}
+
+func listBucketContents(bucket string) bool {
+	ok, body := accessBucket(bucket, "GET", 200)
+	if ok {
+		fmt.Printf("'%s' bucket contents:\n", bucket)
+		var query BucketContentQueryResult
+		xml.Unmarshal([]byte(body), &query)
+		for _, content := range query.Contents {
+			fmt.Printf("  %s : %d byte, modified at %s\n", content.Key, content.Size, content.LastModified)
+		}
+		return true
+	}
+	return false
 }
 
 func getAccessRight(bucket string) {
@@ -549,6 +646,12 @@ func main() {
 		if (createBucket(os.Args[2])) {
 			addAccessRight(os.Args[2], os.Args[3])
 		}
+	} else if os.Args[1] == "delete-bucket" && len(os.Args) == 3 {
+		deleteBucket(os.Args[2])
+	} else if os.Args[1] == "list" && len(os.Args) == 2 {
+		listBuckets()
+	} else if os.Args[1] == "list" && len(os.Args) == 3 {
+		listBucketContents(os.Args[2])
 	} else if os.Args[1] == "set-acl" && len(os.Args) == 4 {
 		addAccessRight(os.Args[2], os.Args[3])
 	} else if os.Args[1] == "get-acl" && len(os.Args) == 3 {

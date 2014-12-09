@@ -117,6 +117,22 @@ Create bucket. If user **accesibleUserName** is passed, this command gives read/
    $ riakcs-helper create-bucket [bucketName] [*accesibleUserName*]
    Create bucket 'test12' successuflly
 
+Delete Bucket
+~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+   $ riakcs-helper delete-bucket [bucketName]
+
+List Bucket/Contents
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+   $ riakcs-helper list [*bucketName*]
+
+If **bucketName** is omitted, this command shows bucket list. Otherwise, it shows contents of the bucket.
+
 Set ACL (simple)
 ~~~~~~~~~~~~~~~~~~~~
 
