@@ -57,7 +57,7 @@ Bucket Operations:
 	riakcs-helper create-bucket [bucketName] [*accesibleUserName*]
 		: Create bucket. If user name is passed,
 		: give read/write access to specified user (owner is admin)
-	riakcs-helper delete-bucket [bucketName]
+	riakcs-helper delete-bucket [*-f*] [bucketName]
 	riakcs-helper list [*bucketName*]
 	riakcs-helper set-acl [bucketName] [accesibleUserName]
 		: give read/write access to specified user (owner is admin)
@@ -66,6 +66,9 @@ User and Bucket Operations:
 	riakcs-helper create-project [bucketAndUserName] [email]
 		: Create user and bucket (both have same name)
 		: New user has READ/WRITE access of the new bucket.
+
+note:
+	[parameter] is required. [*param*] is optional.
 `
 
 func usage() {
@@ -442,6 +445,50 @@ func accessBucket(bucket, method string, expectReturnCode int) (bool, string) {
 	return true, string(body)
 }
 
+func deleteContentRaw(client *http.Client, config *Config, bucket, content string) bool {
+	req, _ := http.NewRequest("DELETE", fmt.Sprintf("http://%s.%s/%s", bucket, config.Host, content), strings.NewReader(""))
+	req.Header.Set("Host", fmt.Sprintf("http://%s.%s", bucket, config.Host))
+
+	sign(req, config, "", "", fmt.Sprintf("/%s/%s", bucket, content))
+
+	res, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+		return false
+	}
+	if res.StatusCode != 204 {
+		fmt.Println(res.Status)
+		return false
+	}
+	return true
+}
+
+func deleteContent(bucket, content string) bool {
+	config := readConfig()
+	if config == nil {
+		fmt.Println("Can't read config file. Call init command first.")
+		return false
+	}
+
+	client := createClient(config)
+	return deleteContentRaw(client, config, bucket, content)
+}
+
+func deleteBucketForce(bucket string) bool {
+	contents := listBucketContents(bucket)
+	config := readConfig()
+	if config == nil {
+		fmt.Println("Can't read config file. Call init command first.")
+		return false
+	}
+	client := createClient(config)
+	for _, content := range contents {
+		log.Printf("  deleting %s\n", content.Key)
+		deleteContentRaw(client, config, bucket, content.Key)
+	}
+	return deleteBucket(bucket)
+}
+
 func deleteBucket(bucket string) bool {
 	ok, _ := accessBucket(bucket, "DELETE", 204)
 	if ok {
@@ -471,18 +518,15 @@ type ContentQueryResult struct {
 	Size int
 }
 
-func listBucketContents(bucket string) bool {
+func listBucketContents(bucket string) []ContentQueryResult {
 	ok, body := accessBucket(bucket, "GET", 200)
 	if ok {
 		fmt.Printf("'%s' bucket contents:\n", bucket)
 		var query BucketContentQueryResult
 		xml.Unmarshal([]byte(body), &query)
-		for _, content := range query.Contents {
-			fmt.Printf("  %s : %d byte, modified at %s\n", content.Key, content.Size, content.LastModified)
-		}
-		return true
+		return query.Contents
 	}
-	return false
+	return make([]ContentQueryResult, 0)
 }
 
 func getAccessRight(bucket string) {
@@ -648,10 +692,17 @@ func main() {
 		}
 	} else if os.Args[1] == "delete-bucket" && len(os.Args) == 3 {
 		deleteBucket(os.Args[2])
+	} else if os.Args[1] == "delete-bucket" && len(os.Args) == 4 && os.Args[2] == "-f" {
+		deleteBucketForce(os.Args[3])
+	} else if os.Args[1] == "delete" && len(os.Args) == 4 {
+		deleteContent(os.Args[2], os.Args[3])
 	} else if os.Args[1] == "list" && len(os.Args) == 2 {
 		listBuckets()
 	} else if os.Args[1] == "list" && len(os.Args) == 3 {
-		listBucketContents(os.Args[2])
+		contents := listBucketContents(os.Args[2])
+		for _, content := range contents {
+			fmt.Printf("  %s : %d byte, modified at %s\n", content.Key, content.Size, content.LastModified)
+		}
 	} else if os.Args[1] == "set-acl" && len(os.Args) == 4 {
 		addAccessRight(os.Args[2], os.Args[3])
 	} else if os.Args[1] == "get-acl" && len(os.Args) == 3 {
