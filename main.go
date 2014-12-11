@@ -44,7 +44,7 @@ var b64 = base64.StdEncoding
 const usageStr = `Usage:
 
 Config:
-	riakcs-helper init [host] [adminAccessKey] [adminSecretKey] [*proxy*]
+	riakcs-helper init [host] [adminAccessKey] [adminSecretKey] [adminId] [*proxy*]
 
 User Operations:
 	riakcs-helper create-user [userName] [email]
@@ -105,6 +105,7 @@ func (b RiakUsers) Less(i, j int) bool {
 type Config struct {
 	AdminAccessKey string
 	AdminSecretKey string
+	AdminId string
 	Host string
 	Proxy string
 }
@@ -129,10 +130,10 @@ func readConfig() *Config {
 	return &config
 }
 
-func writeConfig(host, adminAccessKey, adminSecretKey, proxy string) {
+func writeConfig(host, adminAccessKey, adminSecretKey, adminId, proxy string) {
 	usr, _ := user.Current()
 	path := filepath.Join(usr.HomeDir, ".riakcs_helper")
-	config := Config{adminAccessKey, adminSecretKey, host, proxy}
+	config := Config{adminAccessKey, adminSecretKey, adminId, host, proxy}
 	b, _ := json.Marshal(config)
 	out, err := os.Create(path)
 	if err != nil {
@@ -227,20 +228,11 @@ func findUser(name string) *RiakUser {
 	return nil
 }
 
-func findAdminAndUser(name string) (*RiakUser, *RiakUser) {
-	users := getAllUsers()
-	config := readConfig()
-
-	var admin *RiakUser = nil
-	var foundUser *RiakUser = nil
-	for _, user := range users {
-		if user.Name == name {
-			foundUser = user
-		} else if config.AdminAccessKey == user.Key_id {
-			admin = user
-		}
-	}
-	return admin, foundUser
+func loadAdmin(config *Config) *RiakUser {
+	var admin RiakUser
+	admin.Id = config.AdminId
+	admin.Display_name = "Administrator"
+	return &admin
 }
 
 func getAllUsers() []*RiakUser {
@@ -577,20 +569,16 @@ func makeGrantTag(user *RiakUser, permission string) string {
 }
 
 func addAccessRight(bucket, userName string) {
-	admin, foundUser := findAdminAndUser(userName)
+	foundUser := findUser(userName)
 	if foundUser == nil {
 		fmt.Printf("User %s is not found\n", userName)
 		os.Exit(1)
 	}
-	if admin == nil {
-		fmt.Println("Admin user is not found")
-		os.Exit(1)
-	}
-
 	config := readConfig()
 	if config == nil {
 		fmt.Println("Can't read config file. Call init command first.")
 	}
+	admin := loadAdmin(config)
 
 	adminXML := fmt.Sprintf(`<Owner>
 			<ID>%s</ID>
@@ -643,10 +631,10 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
-	if os.Args[1] == "init" && len(os.Args) == 5 {
-		writeConfig(os.Args[2], os.Args[3], os.Args[4], "")
-	} else if os.Args[1] == "init" && len(os.Args) == 6 {
-		writeConfig(os.Args[2], os.Args[3], os.Args[4], os.Args[5])
+	if os.Args[1] == "init" && len(os.Args) == 6 {
+		writeConfig(os.Args[2], os.Args[3], os.Args[4], os.Args[5], "")
+	} else if os.Args[1] == "init" && len(os.Args) == 7 {
+		writeConfig(os.Args[2], os.Args[3], os.Args[4], os.Args[5], os.Args[6])
 	} else if os.Args[1] == "create-user" && len(os.Args) == 4 {
 		user := createUser(os.Args[2], os.Args[3])
 		if user != nil {

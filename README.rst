@@ -20,7 +20,7 @@ Config
 
 .. code-block:: bash
 
-   $ riakcs-helper init [host] [adminAccessKey] [adminSecretKey] [*proxy*]
+   $ riakcs-helper init [host] [adminAccessKey] [adminSecretKey] [adminId] [*proxy*]
 
 Riak CS assumes using sub-domain for bucket name. But this is a little difficult for testing server.
 In this case, you should set **host** and **proxy**.
@@ -36,7 +36,7 @@ Before running this command, you should create administrator account.
 
 .. code-block:: bash
 
-   $ riakcs-helper init s3.amazonaws.com -LG_3TE1KSSKPY-C7GPD 4_rwEo4HwX-Wi2eEIUrg5oh7nF5mNMx9-pKI2g== http://127.0.0.1:8080
+   $ riakcs-helper init s3.amazonaws.com -LG_3TE1KSSKPY-C7GPD 4_rwEo4HwX-Wi2eEIUrg5oh7nF5mNMx9-pKI2g== c41e30333bcbe9e3e96ca530ab9abd01661a960b8e4cc00102e2f4e76d12e708 http://127.0.0.1:8080
 
    setting file /Users/shibukawa/.riakcs_helper is written.
 
