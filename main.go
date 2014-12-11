@@ -258,7 +258,7 @@ func getAllUsers() []*RiakUser {
 		return nil
 	}
 	if res.StatusCode != 200 {
-		log.Fatalln("User creation failed.")
+		log.Fatalln("Getting user failed.")
 		return nil
 	}
 
