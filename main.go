@@ -25,6 +25,7 @@ import (
 	"time"
 	"io"
 	"io/ioutil"
+	"sort"
 	"strings"
 	"crypto/hmac"
 	"crypto/sha1"
@@ -84,6 +85,20 @@ type RiakUser struct {
 	Name string
 	Id string
 	Status string
+}
+
+type RiakUsers []*RiakUser
+
+func (b RiakUsers) Len() int {
+	return len(b)
+}
+
+func (b RiakUsers) Swap(i, j int) {
+	b[i], b[j] = b[j], b[i]
+}
+
+func (b RiakUsers) Less(i, j int) bool {
+	return b[i].Name < b[j].Name
 }
 
 type Config struct {
@@ -380,6 +395,20 @@ type BucketResult struct {
 	CreationDate string
 }
 
+type BucketResults []BucketResult
+
+func (b BucketResults) Len() int {
+	return len(b)
+}
+
+func (b BucketResults) Swap(i, j int) {
+	b[i], b[j] = b[j], b[i]
+}
+
+func (b BucketResults) Less(i, j int) bool {
+	return b[i].Name < b[j].Name
+}
+
 func listBuckets() {
 	config := readConfig()
 	if config == nil {
@@ -410,7 +439,9 @@ func listBuckets() {
 	fmt.Println("bucket list")
 	var query BucketQueryResult
 	xml.Unmarshal(body, &query)
-	for _, bucket := range query.Buckets.Bucket {
+	var buckets BucketResults = query.Buckets.Bucket
+	sort.Sort(buckets)
+	for _, bucket := range buckets {
 		fmt.Printf("  %s : created at %s\n", bucket.Name, bucket.CreationDate)
 	}
 }
@@ -570,7 +601,11 @@ func addAccessRight(bucket, userName string) {
 	admin, foundUser := findAdminAndUser(userName)
 	if foundUser == nil {
 		fmt.Printf("User %s is not found\n", userName)
-		return
+		os.Exit(1)
+	}
+	if admin == nil {
+		fmt.Println("Admin user is not found")
+		os.Exit(1)
 	}
 
 	config := readConfig()
@@ -642,11 +677,13 @@ func main() {
 			dumpUser(user)
 		}
 	} else if os.Args[1] == "show-user" && len(os.Args) == 2 {
-		users := getAllUsers()
+		var users RiakUsers = getAllUsers()
+		sort.Sort(users)
 		for _, user := range users {
 			dumpUser(user)
 			fmt.Println("")
 		}
+		fmt.Printf("total %d users\n", len(users))
 	} else if os.Args[1] == "show-user" && len(os.Args) == 3 {
 		user := findUser(os.Args[2])
 		if user != nil {
