@@ -59,6 +59,7 @@ Bucket Operations:
 		: Create bucket. If user name is passed,
 		: give read/write access to specified user (owner is admin)
 	riakcs-helper delete-bucket [*-f*] [bucketName]
+	riakcs-helper clean-bucket [bucketName]
 	riakcs-helper list [*bucketName*]
 	riakcs-helper set-acl [bucketName] [accesibleUserName]
 		: give read/write access to specified user (owner is admin)
@@ -114,19 +115,16 @@ func readConfig() *Config {
 	in, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	body, err := ioutil.ReadAll(in)
 	in.Close()
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	config := Config{}
 	err = json.Unmarshal(body, &config)
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	return &config
 }
@@ -153,7 +151,6 @@ func createClient(config *Config) *http.Client {
 		urlProxy, err := urlObj.Parse(config.Proxy)
 		if err != nil {
 			log.Fatal(err)
-			return client
 		}
 		transport := &http.Transport{}
 		transport.Proxy = http.ProxyURL(urlProxy)
@@ -204,22 +201,18 @@ func createUser(name, email string) *RiakUser {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	if res.StatusCode != 201 {
 		log.Fatalln("User creation failed.")
-		return nil
 	}
 	var user RiakUser
 	err = json.Unmarshal(body, &user)
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	return &user
 }
@@ -265,26 +258,21 @@ func getAllUsers() []*RiakUser {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	if res.StatusCode != 200 {
 		log.Fatalln("Getting user failed.")
-		return nil
 	}
 
 	mediaType, params, err := mime.ParseMediaType(res.Header.Get("Content-Type"))
 	if err != nil {
 		log.Fatal(nil)
-		return nil
 	}
 	if mediaType != "multipart/mixed" {
 		log.Fatal("unknown return type. this code assumes multipart/mixed")
-		return nil
 	}
 	mr := multipart.NewReader(res.Body, params["boundary"])
 	resultUsers := make([]*RiakUser, 0)
@@ -295,18 +283,15 @@ func getAllUsers() []*RiakUser {
 		}
 		if err != nil {
 			log.Fatal(err)
-			return nil
 		}
 		var users []RiakUser
 		body, err := ioutil.ReadAll(part)
 		if err != nil {
 			log.Fatal(err)
-			return nil
 		}
 		err = json.Unmarshal(body, &users)
 		if err != nil {
 			log.Fatal(err)
-			return nil
 		}
 		if len(users) == 0 {
 			break
@@ -340,19 +325,16 @@ func modifyUserSetting(userName, requestBody string) *RiakUser {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	//log.Print(string(body))
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	var user RiakUser
 	err = json.Unmarshal(body, &user)
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 	return &user
 
@@ -425,7 +407,6 @@ func listBuckets() {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return
 	}
 	if res.StatusCode != 200 {
 		fmt.Println(res.Status)
@@ -434,7 +415,6 @@ func listBuckets() {
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Fatal(err)
-		return
 	}
 	fmt.Println("bucket list")
 	var query BucketQueryResult
@@ -462,7 +442,6 @@ func accessBucket(bucket, method string, expectReturnCode int) (bool, string) {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return false, ""
 	}
 	if res.StatusCode != expectReturnCode {
 		fmt.Println(res.Status)
@@ -471,7 +450,6 @@ func accessBucket(bucket, method string, expectReturnCode int) (bool, string) {
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Fatal(err)
-		return false, ""
 	}
 	return true, string(body)
 }
@@ -485,7 +463,6 @@ func deleteContentRaw(client *http.Client, config *Config, bucket, content strin
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return false
 	}
 	if res.StatusCode != 204 {
 		fmt.Println(res.Status)
@@ -505,18 +482,22 @@ func deleteContent(bucket, content string) bool {
 	return deleteContentRaw(client, config, bucket, content)
 }
 
-func deleteBucketForce(bucket string) bool {
+func cleanBucket(bucket string) {
 	contents := listBucketContents(bucket)
 	config := readConfig()
 	if config == nil {
 		fmt.Println("Can't read config file. Call init command first.")
-		return false
+		os.Exit(1)
 	}
 	client := createClient(config)
 	for _, content := range contents {
 		log.Printf("  deleting %s\n", content.Key)
 		deleteContentRaw(client, config, bucket, content.Key)
 	}
+}
+
+func deleteBucketForce(bucket string) bool {
+	cleanBucket(bucket)
 	return deleteBucket(bucket)
 }
 
@@ -575,16 +556,14 @@ func getAccessRight(bucket string) {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
+		log.Print(res.Status)
+		log.Print(string(body))
 		log.Fatal(err)
-		return
 	}
-	log.Print(res.Status)
-	log.Print(string(body))
 }
 
 func makeGrantTag(user *RiakUser, permission string) string {
@@ -640,13 +619,11 @@ func addAccessRight(bucket, userName string) {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
-		return
 	}
 
 	_, err = ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Fatal(err)
-		return
 	}
 
 	if res.StatusCode != 200 {
@@ -727,6 +704,8 @@ func main() {
 		if (createBucket(os.Args[2])) {
 			addAccessRight(os.Args[2], os.Args[3])
 		}
+	} else if os.Args[1] == "clean-bucket" && len(os.Args) == 3 {
+		cleanBucket(os.Args[2])
 	} else if os.Args[1] == "delete-bucket" && len(os.Args) == 3 {
 		deleteBucket(os.Args[2])
 	} else if os.Args[1] == "delete-bucket" && len(os.Args) == 4 && os.Args[2] == "-f" {
@@ -737,6 +716,9 @@ func main() {
 		listBuckets()
 	} else if os.Args[1] == "list" && len(os.Args) == 3 {
 		contents := listBucketContents(os.Args[2])
+		if len(contents) == 0 {
+			fmt.Println("	empty bucket")
+		}
 		for _, content := range contents {
 			fmt.Printf("  %s : %d byte, modified at %s\n", content.Key, content.Size, content.LastModified)
 		}

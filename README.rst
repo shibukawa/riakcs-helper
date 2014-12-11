@@ -127,6 +127,15 @@ Delete Bucket
 Detele specified bucket. **-f** option is used, it removes all content and and bucket at the same time.
 Otherwise, delete operation will be failed if there are any content in the bucket.
 
+Clean Bucket
+~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+   $ riakcs-helper clean-bucket [bucketName]
+
+This command removes all content of specified bucket.
+
 List Bucket/Contents
 ~~~~~~~~~~~~~~~~~~~~~~
 
