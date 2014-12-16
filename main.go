@@ -231,7 +231,7 @@ func findUser(name string) *RiakUser {
 func loadAdmin(config *Config) *RiakUser {
 	var admin RiakUser
 	admin.Id = config.AdminId
-	admin.Display_name = "Administrator"
+	admin.Display_name = "admin"
 	return &admin
 }
 
@@ -285,10 +285,9 @@ func getAllUsers() []*RiakUser {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if len(users) == 0 {
-			break
+		for _, user := range users {
+			resultUsers = append(resultUsers, &user)
 		}
-		resultUsers = append(resultUsers, &users[0])
 	}
 	return resultUsers
 }
@@ -597,6 +596,7 @@ func addAccessRight(bucket, userName string) {
 			%s
 		</AccessControlList>
 	</AccessControlPolicy>`, adminXML, adminPermission, userReadPermission, userWritePermission)
+	log.Print(requestBody)
 	client := createClient(config)
 
 	req, _ := http.NewRequest("PUT", fmt.Sprintf("http://%s.%s/?acl", bucket, config.Host), strings.NewReader(requestBody))
@@ -609,10 +609,11 @@ func addAccessRight(bucket, userName string) {
 		log.Fatal(err)
 	}
 
-	_, err = ioutil.ReadAll(res.Body)
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Print(string(body))
 
 	if res.StatusCode != 200 {
 		log.Fatalln("Set bucket %s's ACL failed.", bucket)
