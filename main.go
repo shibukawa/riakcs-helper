@@ -88,7 +88,7 @@ type RiakUser struct {
 	Status string
 }
 
-type RiakUsers []*RiakUser
+type RiakUsers []RiakUser
 
 func (b RiakUsers) Len() int {
 	return len(b)
@@ -222,7 +222,7 @@ func findUser(name string) *RiakUser {
 	users := getAllUsers()
 	for _, user := range users {
 		if user.Name == name {
-			return user
+			return &user
 		}
 	}
 	return nil
@@ -235,7 +235,7 @@ func loadAdmin(config *Config) *RiakUser {
 	return &admin
 }
 
-func getAllUsers() []*RiakUser {
+func getAllUsers() []RiakUser {
 	config := readConfig()
 	if config == nil {
 		fmt.Println("Can't read config file. Call init command first.")
@@ -267,11 +267,11 @@ func getAllUsers() []*RiakUser {
 		log.Fatal("unknown return type. this code assumes multipart/mixed")
 	}
 	mr := multipart.NewReader(res.Body, params["boundary"])
-	resultUsers := make([]*RiakUser, 0)
+	resultUsers := make([]RiakUser, 0)
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
-			return resultUsers
+            break
 		}
 		if err != nil {
 			log.Fatal(err)
@@ -286,7 +286,7 @@ func getAllUsers() []*RiakUser {
 			log.Fatal(err)
 		}
 		for _, user := range users {
-			resultUsers = append(resultUsers, &user)
+			resultUsers = append(resultUsers, user)
 		}
 	}
 	return resultUsers
@@ -619,17 +619,17 @@ func main() {
 		writeConfig(os.Args[2], os.Args[3], os.Args[4], os.Args[5], "")
 	} else if os.Args[1] == "init" && len(os.Args) == 7 {
 		writeConfig(os.Args[2], os.Args[3], os.Args[4], os.Args[5], os.Args[6])
-	} else if os.Args[1] == "create-user" && len(os.Args) == 4 {
+	} else if  os.Args[1] == "create-user" && len(os.Args) == 4 {
 		user := createUser(os.Args[2], os.Args[3])
 		if user != nil {
 			fmt.Println("Create user successuflly")
 			dumpUser(user)
 		}
 	} else if os.Args[1] == "show-user" && len(os.Args) == 2 {
-		var users RiakUsers = getAllUsers()
+        var users RiakUsers = getAllUsers()
 		sort.Sort(users)
 		for _, user := range users {
-			dumpUser(user)
+			dumpUser(&user)
 			fmt.Println("")
 		}
 		fmt.Printf("total %d users\n", len(users))
