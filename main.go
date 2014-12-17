@@ -558,13 +558,7 @@ func getAccessRight(bucket string) {
 }
 
 func makeGrantTag(user *RiakUser, permission string) string {
-	return fmt.Sprintf(`<Grant>
-				<Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">
-				<ID>%s</ID>
-				<DisplayName>%s</DisplayName>
-				</Grantee>
-				<Permission>%s</Permission>
-			</Grant>`, user.Id, user.Display_name, permission)
+	return fmt.Sprintf(`<Grant><Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser"><ID>%s</ID></Grantee><Permission>%s</Permission></Grant>`, user.Id, permission)
 }
 
 func addAccessRight(bucket, userName string) {
@@ -579,23 +573,12 @@ func addAccessRight(bucket, userName string) {
 	}
 	admin := loadAdmin(config)
 
-	adminXML := fmt.Sprintf(`<Owner>
-			<ID>%s</ID>
-			<DisplayName>%s</DisplayName>
-		</Owner>`, admin.Id, admin.Display_name)
+	adminXML := fmt.Sprintf(`<Owner><ID>%s</ID></Owner>`, admin.Id)
 	adminPermission := makeGrantTag(admin, "FULL_CONTROL")
 	userReadPermission := makeGrantTag(foundUser, "READ")
 	userWritePermission := makeGrantTag(foundUser, "WRITE")
 
-	requestBody := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-	<AccessControlPolicy>
-		%s
-		<AccessControlList>
-			%s
-			%s
-			%s
-		</AccessControlList>
-	</AccessControlPolicy>`, adminXML, adminPermission, userReadPermission, userWritePermission)
+	requestBody := fmt.Sprintf(`<AccessControlPolicy>%s<AccessControlList>%s%s%s</AccessControlList></AccessControlPolicy>`, adminXML, adminPermission, userReadPermission, userWritePermission)
 	log.Print(requestBody)
 	client := createClient(config)
 
