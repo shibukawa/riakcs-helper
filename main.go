@@ -482,7 +482,7 @@ func cleanBucket(bucket string) {
 	}
 	client := createClient(config)
 	for _, content := range contents {
-		log.Printf("  deleting %s\n", content.Key)
+		fmt.Printf("  deleting %s\n", content.Key)
 		deleteContentRaw(client, config, bucket, content.Key)
 	}
 }
@@ -551,7 +551,7 @@ func getAccessRight(bucket string) {
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		log.Print(res.Status)
+		//log.Print(res.Status)
 		log.Print(string(body))
 		log.Fatal(err)
 	}
@@ -579,7 +579,7 @@ func addAccessRight(bucket, userName string) {
 	userWritePermission := makeGrantTag(foundUser, "WRITE")
 
 	requestBody := fmt.Sprintf(`<AccessControlPolicy>%s<AccessControlList>%s%s%s</AccessControlList></AccessControlPolicy>`, adminXML, adminPermission, userReadPermission, userWritePermission)
-	log.Print(requestBody)
+	//log.Print(requestBody)
 	client := createClient(config)
 
 	req, _ := http.NewRequest("PUT", fmt.Sprintf("http://%s.%s/?acl", bucket, config.Host), strings.NewReader(requestBody))
@@ -594,9 +594,9 @@ func addAccessRight(bucket, userName string) {
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
+	    log.Print(string(body))
 		log.Fatal(err)
 	}
-	log.Print(string(body))
 
 	if res.StatusCode != 200 {
 		log.Fatalln("Set bucket %s's ACL failed.", bucket)
